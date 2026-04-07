@@ -4099,6 +4099,71 @@ def save_persisted_scenario_state(payload: Dict[str, object]) -> None:
     st.session_state["_scenario_state_snapshot"] = normalized_payload
 
 
+def build_scenario_compare_snapshot(
+    label: str,
+    selected_suppliers: List[str],
+    mitigation_assignments: List[str],
+    metrics: Dict[str, object],
+    scorecard: Dict[str, object],
+) -> Dict[str, object]:
+    breakdown = scorecard.get("breakdown", pd.DataFrame())
+    return {
+        "label": label,
+        "signature": {
+            "selected_suppliers": tuple(sorted(selected_suppliers)),
+            "mitigation_assignments": tuple(sorted(mitigation_assignments)),
+        },
+        "selected_suppliers": list(selected_suppliers),
+        "mitigation_assignments": list(mitigation_assignments),
+        "selected_supplier_count": int(metrics.get("selected_supplier_count", 0)),
+        "mitigation_supplier_count": int(metrics.get("mitigation_supplier_count", 0)),
+        "covered_spend_share": float(metrics.get("covered_spend_share", 0.0)),
+        "uncovered_components": int(metrics.get("uncovered_components", 0)),
+        "mitigated_single_source_components": int(metrics.get("mitigated_single_source_components", 0)),
+        "mitigated_uncovered_components": int(metrics.get("mitigated_uncovered_components", 0)),
+        "estimated_savings": float(metrics.get("estimated_savings", 0.0)),
+        "mitigation_cost": float(metrics.get("mitigation_cost", 0.0)),
+        "net_savings": float(metrics.get("net_savings", 0.0)),
+        "aggregate_risk_reduction": float(metrics.get("aggregate_risk_reduction", 0.0)),
+        "score": float(scorecard.get("score", 0.0)),
+        "optimization_objective": str(scorecard.get("optimization_objective", "Best Overall")),
+        "score_breakdown": breakdown if isinstance(breakdown, pd.DataFrame) else pd.DataFrame(),
+    }
+
+
+def build_scenario_compare_table(current_snapshot: Dict[str, object], saved_snapshots: List[Dict[str, object]]) -> pd.DataFrame:
+    metric_rows = [
+        ("Selected suppliers", "selected_supplier_count", "number"),
+        ("Mitigation suppliers", "mitigation_supplier_count", "number"),
+        ("Covered spend %", "covered_spend_share", "percent"),
+        ("Uncovered components", "uncovered_components", "number"),
+        ("Mitigated single-source", "mitigated_single_source_components", "number"),
+        ("Mitigated uncovered", "mitigated_uncovered_components", "number"),
+        ("Gross savings", "estimated_savings", "currency"),
+        ("Mitigation cost", "mitigation_cost", "currency"),
+        ("Net savings", "net_savings", "currency"),
+        ("Risk reduction", "aggregate_risk_reduction", "decimal"),
+        ("Scenario score", "score", "decimal"),
+    ]
+    scenario_columns = [current_snapshot] + list(saved_snapshots)
+    rows: List[Dict[str, object]] = []
+    for display_name, key, value_type in metric_rows:
+        row: Dict[str, object] = {"Metric": display_name}
+        for snapshot in scenario_columns:
+            raw_value = snapshot.get(key, 0)
+            if value_type == "percent":
+                formatted = f"{float(raw_value):.0%}"
+            elif value_type == "currency":
+                formatted = f"${float(raw_value):,.0f}"
+            elif value_type == "decimal":
+                formatted = f"{float(raw_value):,.1f}"
+            else:
+                formatted = f"{int(raw_value)}"
+            row[str(snapshot.get("label", "Scenario"))] = formatted
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def render_app():
     st.title("Supplier and Sourcing Analysis Tool")
     st.caption("Single-pipeline supplier decisions, sourcing priorities, and executive visuals.")
@@ -4108,6 +4173,8 @@ def render_app():
         st.session_state["persisted_scenario_state"] = load_persisted_scenario_state()
     if "applied_scenario" not in st.session_state:
         st.session_state["applied_scenario"] = None
+    if "scenario_comparisons" not in st.session_state:
+        st.session_state["scenario_comparisons"] = {}
 
     uploaded_file = st.file_uploader("Upload purchasing data", type=["csv", "xlsx", "xls"])
     if uploaded_file is None:
@@ -4134,6 +4201,10 @@ def render_app():
         st.session_state["applied_scenario"] = None
         st.session_state["scenario_builder"] = {}
         st.session_state["scenario_recommendation"] = {}
+        scenario_comparisons = st.session_state.get("scenario_comparisons", {})
+        if isinstance(scenario_comparisons, dict):
+            scenario_comparisons[data_source_label] = []
+            st.session_state["scenario_comparisons"] = scenario_comparisons
         st.session_state.pop("pending_scenario_recommendation", None)
         st.session_state.pop("scenario_selected_suppliers", None)
         st.session_state["scenario_builder_source_label"] = data_source_label
@@ -4842,6 +4913,73 @@ def render_app():
             breakdown = current_scorecard.get("breakdown", pd.DataFrame())
             if isinstance(breakdown, pd.DataFrame) and not breakdown.empty:
                 show_table(breakdown)
+
+        current_snapshot = build_scenario_compare_snapshot(
+            "Current scenario",
+            list(display_selected_suppliers),
+            list(display_mitigation_assignments),
+            scenario_metrics,
+            current_scorecard,
+        )
+        comparison_store = st.session_state.get("scenario_comparisons", {})
+        saved_snapshots = (
+            list(comparison_store.get(data_source_label, []))
+            if isinstance(comparison_store, dict)
+            else []
+        )
+        save_compare_col, clear_compare_col = st.columns(2)
+        with save_compare_col:
+            if st.button("Save Current Scenario For Comparison", type="secondary", use_container_width=True):
+                matching_index = next(
+                    (
+                        idx for idx, snapshot in enumerate(saved_snapshots)
+                        if snapshot.get("signature") == current_snapshot.get("signature")
+                    ),
+                    None,
+                )
+                if matching_index is None:
+                    scenario_number = len(saved_snapshots) + 1
+                    current_snapshot["label"] = f"Scenario {scenario_number}"
+                    saved_snapshots.append(current_snapshot)
+                else:
+                    current_snapshot["label"] = str(saved_snapshots[matching_index].get("label", f"Scenario {matching_index + 1}"))
+                    saved_snapshots[matching_index] = current_snapshot
+                if len(saved_snapshots) > 4:
+                    saved_snapshots = saved_snapshots[-4:]
+                st.session_state["scenario_comparisons"] = {
+                    **comparison_store,
+                    data_source_label: saved_snapshots,
+                }
+                st.rerun()
+        with clear_compare_col:
+            if st.button("Clear Saved Comparisons", use_container_width=True):
+                st.session_state["scenario_comparisons"] = {
+                    **comparison_store,
+                    data_source_label: [],
+                }
+                st.rerun()
+
+        if saved_snapshots:
+            st.subheader("Scenario Comparison")
+            st.caption("Compare the current evaluated scenario against up to four saved scenarios for this dataset.")
+            comparison_table = build_scenario_compare_table(current_snapshot, saved_snapshots)
+            show_table(comparison_table)
+            comparison_columns = st.columns(min(len(saved_snapshots) + 1, 3))
+            scenario_cards = [current_snapshot] + saved_snapshots[:2]
+            for idx, snapshot in enumerate(scenario_cards):
+                with comparison_columns[idx]:
+                    st.markdown(f"### {snapshot['label']}")
+                    st.metric("Scenario score", f"{float(snapshot['score']):,.1f}")
+                    st.metric("Covered spend %", f"{float(snapshot['covered_spend_share']):.0%}")
+                    st.metric("Net savings", f"${float(snapshot['net_savings']):,.0f}")
+                    st.metric("Risk reduction", f"{float(snapshot['aggregate_risk_reduction']):.1f}")
+                    st.caption(
+                        "Suppliers: "
+                        + (", ".join(snapshot.get("selected_suppliers", [])) if snapshot.get("selected_suppliers") else "none")
+                    )
+            if len(saved_snapshots) > 2:
+                overflow_labels = ", ".join(str(snapshot.get("label", "Scenario")) for snapshot in saved_snapshots[2:])
+                st.caption(f"Additional saved comparisons: {overflow_labels}. They are included in the comparison table above.")
 
         st.caption(
             "Existing single-source issues fixed: "
