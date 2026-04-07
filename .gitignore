@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+.scenario_state.json
+streamlit.stdout.log
+streamlit.stderr.log
+
+.DS_Store
+Thumbs.db
+.env
+.venv/
+venv/
