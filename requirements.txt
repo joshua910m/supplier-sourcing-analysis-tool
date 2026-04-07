@@ -3,5 +3,6 @@ pandas
 numpy
 altair
 openpyxl
+pillow
 python-pptx==1.0.2
 vl-convert-python==1.8.0

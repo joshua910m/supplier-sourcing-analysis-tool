@@ -1,6 +1,5 @@
 import io
 import itertools
-import json
 import math
 import textwrap
 from pathlib import Path
@@ -140,9 +139,7 @@ st.markdown(
 DEFAULT_DATASET_CANDIDATES = [
     Path(__file__).with_name("sample_data.xlsx"),
     Path(__file__).with_name("sample_data.xls"),
-    Path(r"C:\Users\jamil\Downloads\Olivander's Wand Shop Purchase Records(1) (1).xlsx"),
 ]
-SCENARIO_STATE_PATH = Path(__file__).with_name(".scenario_state.json")
 RISK_LEVEL_DOMAIN = ["High", "Medium", "Low"]
 RISK_LEVEL_RANGE = ["#d73027", "#f39c12", "#2e8b57"]
 ABC_CLASS_DOMAIN = ["A", "B", "C"]
@@ -3009,16 +3006,23 @@ def make_download_bundle(data_map: Dict[str, pd.DataFrame]) -> bytes:
     return output.getvalue().encode("utf-8")
 
 
+@st.cache_data(show_spinner=False)
 def make_powerpoint_export(
     summary_text: str,
     analytics: Dict[str, pd.DataFrame],
     scenario_applied: bool = False,
 ) -> bytes:
-    from PIL import Image, ImageDraw, ImageFont
-    from pptx import Presentation
-    from pptx.enum.text import MSO_AUTO_SIZE, PP_ALIGN
-    from pptx.dml.color import RGBColor
-    from pptx.util import Inches, Pt
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        from pptx import Presentation
+        from pptx.dml.color import RGBColor
+        from pptx.enum.text import MSO_AUTO_SIZE, PP_ALIGN
+        from pptx.util import Inches, Pt
+    except ModuleNotFoundError as exc:
+        missing_package = str(exc).split("'")[1] if "'" in str(exc) else str(exc)
+        raise RuntimeError(
+            f"PowerPoint export is unavailable because the `{missing_package}` package is missing from the environment."
+        ) from exc
 
     supplier_summary = analytics["supplier_summary"]
     component_summary = analytics["component_summary"]
@@ -4083,22 +4087,16 @@ def load_data(uploaded_file) -> Tuple[pd.DataFrame, str, List[str], pd.DataFrame
 
 
 def load_persisted_scenario_state() -> Dict[str, object]:
-    if not SCENARIO_STATE_PATH.exists():
-        return {}
-    try:
-        with SCENARIO_STATE_PATH.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        return data if isinstance(data, dict) else {}
-    except (OSError, json.JSONDecodeError):
-        return {}
+    # Keep scenario drafts inside Streamlit session state so hosted deployments
+    # do not rely on local filesystem writes that may be ephemeral or unavailable.
+    snapshot = st.session_state.get("_scenario_state_snapshot", {})
+    return snapshot if isinstance(snapshot, dict) else {}
 
 
 def save_persisted_scenario_state(payload: Dict[str, object]) -> None:
-    try:
-        with SCENARIO_STATE_PATH.open("w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2)
-    except OSError:
-        pass
+    normalized_payload = payload if isinstance(payload, dict) else {}
+    st.session_state["persisted_scenario_state"] = normalized_payload
+    st.session_state["_scenario_state_snapshot"] = normalized_payload
 
 
 def render_app():
@@ -5013,6 +5011,12 @@ def render_app():
                 "step_plan": step_plan,
             }
         )
+        powerpoint_bytes = None
+        powerpoint_error = None
+        try:
+            powerpoint_bytes = make_powerpoint_export(summary_text, analytics, scenario_applied=scenario_applied)
+        except Exception as exc:
+            powerpoint_error = str(exc)
         export_col1, export_col2 = st.columns(2)
         with export_col1:
             st.download_button(
@@ -5023,7 +5027,16 @@ def render_app():
                 use_container_width=True,
             )
         with export_col2:
-            st.info("PowerPoint export is temporarily disabled while we troubleshoot the cloud deployment.")
+            if powerpoint_bytes is not None:
+                st.download_button(
+                    "Download Executive PowerPoint",
+                    data=powerpoint_bytes,
+                    file_name="supplier_analysis_executive_pack.pptx",
+                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    use_container_width=True,
+                )
+            else:
+                st.warning(powerpoint_error or "PowerPoint export is currently unavailable in this environment.")
         st.subheader("Key Insights")
         top_risk = component_summary.sort_values("supply_risk_score", ascending=False).head(3)["component"].tolist()
         top_priority = component_summary.sort_values("strategic_priority_score", ascending=False).head(3)["component"].tolist()
