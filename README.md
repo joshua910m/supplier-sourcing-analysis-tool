@@ -44,14 +44,6 @@ On startup, the app uses data in this order:
 
 If you want a hosted deployment to open with your own dataset by default, add it to the repo as `sample_data.xlsx`.
 
-## Deploy to Streamlit Community Cloud
-
-1. Push this project to a GitHub repository.
-2. Go to [https://share.streamlit.io](https://share.streamlit.io).
-3. Create a new app from your repo.
-4. Set the main file path to `app.py`.
-5. Deploy.
-
 ## Files
 
 - `app.py` — main Streamlit app
