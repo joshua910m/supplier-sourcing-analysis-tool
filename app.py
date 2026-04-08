@@ -4702,8 +4702,6 @@ def render_app():
                         st.session_state[mitigation_key] = []
                     else:
                         st.session_state[mitigation_key] = existing_component_suppliers
-                elif not st.session_state.get(mitigation_key) and current_component_suppliers:
-                    st.session_state[mitigation_key] = current_component_suppliers
                 if current_component_suppliers:
                     st.caption(
                         f"Current evaluated mitigation for {component_name}: {', '.join(current_component_suppliers)}"
@@ -4741,8 +4739,6 @@ def render_app():
                         st.session_state[uncovered_key] = []
                     else:
                         st.session_state[uncovered_key] = existing_component_suppliers
-                elif not st.session_state.get(uncovered_key) and current_component_suppliers:
-                    st.session_state[uncovered_key] = current_component_suppliers
                 if current_component_suppliers:
                     st.caption(
                         f"Current evaluated pickup for {component_name}: {', '.join(current_component_suppliers)}"
