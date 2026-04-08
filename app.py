@@ -5051,7 +5051,7 @@ def render_app():
             st.subheader("Scenario Comparison")
             st.caption("Compare the current evaluated scenario against up to four saved scenarios for this dataset.")
             comparison_table = build_scenario_compare_table(current_snapshot, saved_snapshots)
-            show_table(comparison_table)
+            st.table(comparison_table.set_index("Metric"))
             comparison_columns = st.columns(min(len(saved_snapshots) + 1, 3))
             scenario_cards = [current_snapshot] + saved_snapshots[:2]
             for idx, snapshot in enumerate(scenario_cards):
