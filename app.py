@@ -4560,6 +4560,46 @@ def render_app():
             "Base-model keep recommendations: "
             + (", ".join(recommended_keep_suppliers) if recommended_keep_suppliers else "none identified")
         )
+        scenario_component_summary = base_analytics["component_summary"]
+        scenario_single_source_names = scenario_component_summary.loc[
+            scenario_component_summary["single_source_flag"], "component"
+        ].astype(str).tolist()
+        scenario_high_risk_names = scenario_component_summary.loc[
+            scenario_component_summary["high_risk_flag"], "component"
+        ].astype(str).tolist()
+        top_supplier_candidates = scenario_supplier_summary.sort_values("spend", ascending=False)["supplier"].astype(str).tolist()[:3]
+        with st.container(border=True):
+            st.markdown("**Suggested Workflow**")
+            st.write(
+                "1. Generate the recommended scenario as a starting point.\n"
+                "2. Review which suppliers are being retained and which components still need explicit mitigation.\n"
+                "3. Evaluate the draft after each material change so the metrics below reflect the current supplier and mitigation structure.\n"
+                "4. Apply the scenario to the dashboard only after the coverage, savings, and risk tradeoffs look acceptable."
+            )
+            analysis_guidance_parts = []
+            if scenario_single_source_names:
+                analysis_guidance_parts.append(
+                    "The first components to protect are the single-source items "
+                    + format_name_list(scenario_single_source_names, max_items=6)
+                    + "."
+                )
+            if scenario_high_risk_names:
+                analysis_guidance_parts.append(
+                    "The highest-risk components to watch during scenario testing are "
+                    + format_name_list(scenario_high_risk_names, max_items=6)
+                    + "."
+                )
+            if top_supplier_candidates:
+                analysis_guidance_parts.append(
+                    "The suppliers with the largest spend positions in the base case are "
+                    + format_name_list(top_supplier_candidates, max_items=3)
+                    + ", so changes involving them tend to move savings and coverage the most."
+                )
+            if not analysis_guidance_parts:
+                analysis_guidance_parts.append(
+                    "Use the scenario workflow to test whether supplier count can be reduced without creating uncovered demand or new high-risk exposure."
+                )
+            st.caption("Guidance from the current analysis: " + " ".join(analysis_guidance_parts))
         optimization_objective = st.selectbox(
             "Optimization objective",
             options=["Best Overall", "Best Net Savings", "Best Risk Reduction"],
@@ -4571,26 +4611,29 @@ def render_app():
             if st.session_state.get("scenario_builder_source_label") == data_source_label
             else {}
         )
-        recommend_col, spacer_col = st.columns([1, 3])
-        with recommend_col:
-            if st.button("Recommend Best Scenario", type="secondary", use_container_width=True):
-                recommendation = recommend_best_supplier_scenario(base_analytics, optimization_objective=optimization_objective)
-                st.session_state["pending_scenario_recommendation"] = {
-                    "data_source_label": data_source_label,
-                    "selected_suppliers": list(recommendation.get("selected_suppliers", ())),
-                    "mitigation_assignments": list(recommendation.get("mitigation_assignments", ())),
-                    "rationale": recommendation.get("rationale", ""),
-                    "tested_scenarios": int(recommendation.get("tested_scenarios", 0)),
-                    "score": float(recommendation.get("scorecard", {}).get("score", 0.0)),
-                    "optimization_objective": str(recommendation.get("scorecard", {}).get("optimization_objective", optimization_objective)),
-                    "covered_spend_share": float(recommendation.get("metrics", {}).get("covered_spend_share", 0.0)),
-                    "estimated_savings": float(recommendation.get("metrics", {}).get("estimated_savings", 0.0)),
-                    "net_savings": float(recommendation.get("metrics", {}).get("net_savings", 0.0)),
-                    "high_risk_components": int(recommendation.get("scorecard", {}).get("high_risk_components", 0)),
-                    "uncovered_components": int(recommendation.get("metrics", {}).get("uncovered_components", 0)),
-                    "score_breakdown": recommendation.get("scorecard", {}).get("breakdown", pd.DataFrame()),
-                }
-                st.rerun()
+        with st.container(border=True):
+            st.markdown("**Step 1. Generate A Starting Scenario**")
+            st.caption("Choose the optimization objective, then let the model produce a starting supplier and mitigation structure.")
+            recommend_col, spacer_col = st.columns([1, 3])
+            with recommend_col:
+                if st.button("Recommend Best Scenario", type="secondary", use_container_width=True):
+                    recommendation = recommend_best_supplier_scenario(base_analytics, optimization_objective=optimization_objective)
+                    st.session_state["pending_scenario_recommendation"] = {
+                        "data_source_label": data_source_label,
+                        "selected_suppliers": list(recommendation.get("selected_suppliers", ())),
+                        "mitigation_assignments": list(recommendation.get("mitigation_assignments", ())),
+                        "rationale": recommendation.get("rationale", ""),
+                        "tested_scenarios": int(recommendation.get("tested_scenarios", 0)),
+                        "score": float(recommendation.get("scorecard", {}).get("score", 0.0)),
+                        "optimization_objective": str(recommendation.get("scorecard", {}).get("optimization_objective", optimization_objective)),
+                        "covered_spend_share": float(recommendation.get("metrics", {}).get("covered_spend_share", 0.0)),
+                        "estimated_savings": float(recommendation.get("metrics", {}).get("estimated_savings", 0.0)),
+                        "net_savings": float(recommendation.get("metrics", {}).get("net_savings", 0.0)),
+                        "high_risk_components": int(recommendation.get("scorecard", {}).get("high_risk_components", 0)),
+                        "uncovered_components": int(recommendation.get("metrics", {}).get("uncovered_components", 0)),
+                        "score_breakdown": recommendation.get("scorecard", {}).get("breakdown", pd.DataFrame()),
+                    }
+                    st.rerun()
 
         recommendation_state = st.session_state.get("scenario_recommendation", {})
         recommended_assignment_map: Dict[str, List[str]] = {}
@@ -4669,98 +4712,105 @@ def render_app():
         )
 
         mitigation_assignments: List[str] = []
-        with st.form("scenario_builder_form"):
-            selected_suppliers = st.multiselect(
-                "Choose the suppliers for the general supplier scenario",
-                options=all_supplier_options,
-                max_selections=len(all_supplier_options),
-                format_func=lambda supplier: supplier_label_map.get(supplier, supplier),
-                key="scenario_selected_suppliers",
-            )
-            st.caption(f"{len(selected_suppliers)} suppliers selected.")
-            if selected_suppliers:
-                single_source_components = get_dynamic_single_source_candidates(base_analytics, selected_suppliers)
-                uncovered_components = get_uncovered_candidates(base_analytics, selected_suppliers)
-            else:
-                single_source_components = []
-                uncovered_components = []
-                st.caption("No suppliers selected. Evaluating this scenario will show the downside of removing all current supply coverage.")
-            if single_source_components:
-                st.caption("Assign mitigation suppliers to the components that are currently single-source under your general consolidation selection.")
-            for row in single_source_components:
-                component_name = row["component"]
-                incumbent_supplier = row["dominant_supplier"]
-                mitigation_options = [supplier for supplier in all_supplier_options if supplier != incumbent_supplier]
-                mitigation_key = f"mitigation_{component_name}"
-                recommended_component_suppliers = [supplier for supplier in recommended_assignment_map.get(component_name, []) if supplier in mitigation_options]
-                current_component_suppliers = [supplier for supplier in saved_assignment_map.get(component_name, []) if supplier in mitigation_options]
-                existing_component_suppliers = [supplier for supplier in st.session_state.get(mitigation_key, []) if supplier in mitigation_options]
-                if mitigation_key not in st.session_state or previous_assignment_signature != current_draft_supplier_tuple:
-                    if current_component_suppliers:
-                        st.session_state[mitigation_key] = current_component_suppliers
-                    elif len(current_draft_supplier_tuple) == len(all_supplier_options):
-                        st.session_state[mitigation_key] = []
-                    else:
-                        st.session_state[mitigation_key] = existing_component_suppliers
-                if current_component_suppliers:
-                    st.caption(
-                        f"Current evaluated mitigation for {component_name}: {', '.join(current_component_suppliers)}"
-                    )
-                if recommended_component_suppliers:
-                    st.caption(
-                        f"App recommendation for {component_name}: {', '.join(recommended_component_suppliers)}"
-                    )
-                mitigation_choices = st.multiselect(
-                    f"Mitigation suppliers for {component_name} (current supplier: {incumbent_supplier})",
-                    options=mitigation_options,
-                    key=mitigation_key,
-                    format_func=lambda supplier: supplier_label_map.get(supplier, supplier),
-                    help=(
-                        "App-recommended mitigation: " + ", ".join(recommended_component_suppliers)
-                        if recommended_component_suppliers
-                        else None
-                    ),
-                )
-                for supplier_name in mitigation_choices:
-                    mitigation_assignments.append(f"{component_name}|||{supplier_name}")
-            if uncovered_components:
-                st.caption("Assign pickup suppliers to components that are currently uncovered under your general consolidation selection.")
-            for row in uncovered_components:
-                component_name = row["component"]
-                prior_supplier = row["dominant_supplier"]
-                uncovered_key = f"uncovered_{component_name}"
-                recommended_component_suppliers = [supplier for supplier in recommended_assignment_map.get(component_name, []) if supplier in all_supplier_options]
-                current_component_suppliers = [supplier for supplier in saved_assignment_map.get(component_name, []) if supplier in all_supplier_options]
-                existing_component_suppliers = [supplier for supplier in st.session_state.get(uncovered_key, []) if supplier in all_supplier_options]
-                if uncovered_key not in st.session_state or previous_assignment_signature != current_draft_supplier_tuple:
-                    if current_component_suppliers:
-                        st.session_state[uncovered_key] = current_component_suppliers
-                    elif len(current_draft_supplier_tuple) == len(all_supplier_options):
-                        st.session_state[uncovered_key] = []
-                    else:
-                        st.session_state[uncovered_key] = existing_component_suppliers
-                if current_component_suppliers:
-                    st.caption(
-                        f"Current evaluated pickup for {component_name}: {', '.join(current_component_suppliers)}"
-                    )
-                if recommended_component_suppliers:
-                    st.caption(
-                        f"App recommendation for {component_name}: {', '.join(recommended_component_suppliers)}"
-                    )
-                pickup_choices = st.multiselect(
-                    f"Pickup suppliers for uncovered component {component_name} (previous dominant supplier: {prior_supplier})",
+        current_form_widget_values: Dict[str, List[str]] = {}
+        with st.container(border=True):
+            st.markdown("**Step 2. Adjust The Scenario Draft**")
+            st.caption("Select the suppliers you want to keep, then assign explicit mitigation or pickup suppliers where the draft still creates exposure.")
+            with st.form("scenario_builder_form"):
+                selected_suppliers = st.multiselect(
+                    "Choose the suppliers for the general supplier scenario",
                     options=all_supplier_options,
-                    key=uncovered_key,
+                    max_selections=len(all_supplier_options),
                     format_func=lambda supplier: supplier_label_map.get(supplier, supplier),
-                    help=(
-                        "App-recommended pickup supplier: " + ", ".join(recommended_component_suppliers)
-                        if recommended_component_suppliers
-                        else None
-                    ),
+                    key="scenario_selected_suppliers",
                 )
-                for supplier_name in pickup_choices:
-                    mitigation_assignments.append(f"{component_name}|||{supplier_name}")
-            evaluate_submitted = st.form_submit_button("Evaluate Selected Scenario", type="secondary", use_container_width=True)
+                st.caption(f"{len(selected_suppliers)} suppliers selected.")
+                if selected_suppliers:
+                    single_source_components = get_dynamic_single_source_candidates(base_analytics, selected_suppliers)
+                    uncovered_components = get_uncovered_candidates(base_analytics, selected_suppliers)
+                else:
+                    single_source_components = []
+                    uncovered_components = []
+                    st.caption("No suppliers selected. Evaluating this scenario will show the downside of removing all current supply coverage.")
+                if single_source_components:
+                    st.caption("Assign mitigation suppliers to the components that are currently single-source under your general consolidation selection.")
+                for row in single_source_components:
+                    component_name = row["component"]
+                    incumbent_supplier = row["dominant_supplier"]
+                    mitigation_options = [supplier for supplier in all_supplier_options if supplier != incumbent_supplier]
+                    mitigation_key = f"mitigation_{component_name}"
+                    recommended_component_suppliers = [supplier for supplier in recommended_assignment_map.get(component_name, []) if supplier in mitigation_options]
+                    current_component_suppliers = [supplier for supplier in saved_assignment_map.get(component_name, []) if supplier in mitigation_options]
+                    existing_component_suppliers = [supplier for supplier in st.session_state.get(mitigation_key, []) if supplier in mitigation_options]
+                    if mitigation_key not in st.session_state or previous_assignment_signature != current_draft_supplier_tuple:
+                        if current_component_suppliers:
+                            st.session_state[mitigation_key] = current_component_suppliers
+                        elif len(current_draft_supplier_tuple) == len(all_supplier_options):
+                            st.session_state[mitigation_key] = []
+                        else:
+                            st.session_state[mitigation_key] = existing_component_suppliers
+                    if current_component_suppliers:
+                        st.caption(
+                            f"Current evaluated mitigation for {component_name}: {', '.join(current_component_suppliers)}"
+                        )
+                    if recommended_component_suppliers:
+                        st.caption(
+                            f"App recommendation for {component_name}: {', '.join(recommended_component_suppliers)}"
+                        )
+                    mitigation_choices = st.multiselect(
+                        f"Mitigation suppliers for {component_name} (current supplier: {incumbent_supplier})",
+                        options=mitigation_options,
+                        key=mitigation_key,
+                        format_func=lambda supplier: supplier_label_map.get(supplier, supplier),
+                        help=(
+                            "App-recommended mitigation: " + ", ".join(recommended_component_suppliers)
+                            if recommended_component_suppliers
+                            else None
+                        ),
+                    )
+                    current_form_widget_values[mitigation_key] = list(mitigation_choices)
+                    for supplier_name in mitigation_choices:
+                        mitigation_assignments.append(f"{component_name}|||{supplier_name}")
+                if uncovered_components:
+                    st.caption("Assign pickup suppliers to components that are currently uncovered under your general consolidation selection.")
+                for row in uncovered_components:
+                    component_name = row["component"]
+                    prior_supplier = row["dominant_supplier"]
+                    uncovered_key = f"uncovered_{component_name}"
+                    recommended_component_suppliers = [supplier for supplier in recommended_assignment_map.get(component_name, []) if supplier in all_supplier_options]
+                    current_component_suppliers = [supplier for supplier in saved_assignment_map.get(component_name, []) if supplier in all_supplier_options]
+                    existing_component_suppliers = [supplier for supplier in st.session_state.get(uncovered_key, []) if supplier in all_supplier_options]
+                    if uncovered_key not in st.session_state or previous_assignment_signature != current_draft_supplier_tuple:
+                        if current_component_suppliers:
+                            st.session_state[uncovered_key] = current_component_suppliers
+                        elif len(current_draft_supplier_tuple) == len(all_supplier_options):
+                            st.session_state[uncovered_key] = []
+                        else:
+                            st.session_state[uncovered_key] = existing_component_suppliers
+                    if current_component_suppliers:
+                        st.caption(
+                            f"Current evaluated pickup for {component_name}: {', '.join(current_component_suppliers)}"
+                        )
+                    if recommended_component_suppliers:
+                        st.caption(
+                            f"App recommendation for {component_name}: {', '.join(recommended_component_suppliers)}"
+                        )
+                    pickup_choices = st.multiselect(
+                        f"Pickup suppliers for uncovered component {component_name} (previous dominant supplier: {prior_supplier})",
+                        options=all_supplier_options,
+                        key=uncovered_key,
+                        format_func=lambda supplier: supplier_label_map.get(supplier, supplier),
+                        help=(
+                            "App-recommended pickup supplier: " + ", ".join(recommended_component_suppliers)
+                            if recommended_component_suppliers
+                            else None
+                        ),
+                    )
+                    current_form_widget_values[uncovered_key] = list(pickup_choices)
+                    for supplier_name in pickup_choices:
+                        mitigation_assignments.append(f"{component_name}|||{supplier_name}")
+                st.caption("When the draft looks right, evaluate it to refresh the scenario metrics and impact view below.")
+                evaluate_submitted = st.form_submit_button("Evaluate Selected Scenario", type="secondary", use_container_width=True)
         draft_scenario_builder = {
             "selected_suppliers": list(selected_suppliers),
             "mitigation_assignments": sorted(mitigation_assignments),
@@ -4795,6 +4845,11 @@ def render_app():
         )
         if evaluate_submitted:
             evaluated_scenario_builder = draft_scenario_builder
+            for key in list(st.session_state.keys()):
+                if (key.startswith("mitigation_") or key.startswith("uncovered_")) and key not in current_form_widget_values:
+                    del st.session_state[key]
+            for key, values in current_form_widget_values.items():
+                st.session_state[key] = list(values)
             st.session_state["scenario_builder"] = evaluated_scenario_builder
             save_persisted_scenario_state(
                 {
@@ -4804,26 +4859,29 @@ def render_app():
                 }
             )
             st.rerun()
-        action_left, action_right = st.columns(2)
-        with action_left:
-            if st.button("Revert To Base Scenario", type="secondary", use_container_width=True):
-                st.session_state["pending_revert_to_base_scenario"] = True
-                st.rerun()
-        with action_right:
-            if st.button("Apply Scenario To Dashboard", type="primary", disabled=not has_evaluated_builder):
-                st.session_state["applied_scenario"] = {
-                    "data_source_label": data_source_label,
-                    "selected_suppliers": tuple(sorted(display_selected_suppliers)),
-                    "mitigation_assignments": tuple(sorted(display_mitigation_assignments)),
-                }
-                save_persisted_scenario_state(
-                    {
+        with st.container(border=True):
+            st.markdown("**Step 3. Finalize The Scenario**")
+            st.caption("After evaluation, either reset the exercise or apply the evaluated scenario to the dashboard.")
+            action_left, action_right = st.columns(2)
+            with action_left:
+                if st.button("Revert To Base Scenario", type="secondary", use_container_width=True):
+                    st.session_state["pending_revert_to_base_scenario"] = True
+                    st.rerun()
+            with action_right:
+                if st.button("Apply Scenario To Dashboard", type="primary", disabled=not has_evaluated_builder):
+                    st.session_state["applied_scenario"] = {
                         "data_source_label": data_source_label,
-                        "scenario_builder": st.session_state.get("scenario_builder", {}),
-                        "applied_scenario": None,
+                        "selected_suppliers": tuple(sorted(display_selected_suppliers)),
+                        "mitigation_assignments": tuple(sorted(display_mitigation_assignments)),
                     }
-                )
-                st.rerun()
+                    save_persisted_scenario_state(
+                        {
+                            "data_source_label": data_source_label,
+                            "scenario_builder": st.session_state.get("scenario_builder", {}),
+                            "applied_scenario": None,
+                        }
+                    )
+                    st.rerun()
 
         base_component_summary = base_analytics["component_summary"].copy()
         base_structural_single_source_names = base_component_summary.loc[
