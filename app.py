@@ -4556,6 +4556,15 @@ def render_app():
         if st.session_state.get("scenario_builder_source_label") != data_source_label:
             st.session_state["scenario_builder_source_label"] = data_source_label
             st.session_state["scenario_selected_suppliers"] = default_selected_suppliers
+        pending_widget_clear = st.session_state.pop("pending_scenario_widget_clear", None)
+        if isinstance(pending_widget_clear, list):
+            for key in pending_widget_clear:
+                if key in st.session_state:
+                    del st.session_state[key]
+        pending_widget_updates = st.session_state.pop("pending_scenario_widget_updates", None)
+        if isinstance(pending_widget_updates, dict):
+            for key, values in pending_widget_updates.items():
+                st.session_state[key] = list(values)
         st.caption(
             "Base-model keep recommendations: "
             + (", ".join(recommended_keep_suppliers) if recommended_keep_suppliers else "none identified")
@@ -4859,11 +4868,14 @@ def render_app():
         )
         if evaluate_submitted:
             evaluated_scenario_builder = draft_scenario_builder
-            for key in list(st.session_state.keys()):
-                if (key.startswith("mitigation_") or key.startswith("uncovered_")) and key not in current_form_widget_values:
-                    del st.session_state[key]
-            for key, values in current_form_widget_values.items():
-                st.session_state[key] = list(values)
+            st.session_state["pending_scenario_widget_clear"] = [
+                key
+                for key in list(st.session_state.keys())
+                if (key.startswith("mitigation_") or key.startswith("uncovered_")) and key not in current_form_widget_values
+            ]
+            st.session_state["pending_scenario_widget_updates"] = {
+                key: list(values) for key, values in current_form_widget_values.items()
+            }
             st.session_state["scenario_builder"] = evaluated_scenario_builder
             save_persisted_scenario_state(
                 {
