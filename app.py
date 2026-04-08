@@ -4118,6 +4118,7 @@ def build_scenario_compare_snapshot(
         "selected_supplier_count": int(metrics.get("selected_supplier_count", 0)),
         "mitigation_supplier_count": int(metrics.get("mitigation_supplier_count", 0)),
         "covered_spend_share": float(metrics.get("covered_spend_share", 0.0)),
+        "single_source_components": int(metrics.get("single_source_components", 0)),
         "uncovered_components": int(metrics.get("uncovered_components", 0)),
         "mitigated_single_source_components": int(metrics.get("mitigated_single_source_components", 0)),
         "mitigated_uncovered_components": int(metrics.get("mitigated_uncovered_components", 0)),
@@ -4134,9 +4135,10 @@ def build_scenario_compare_snapshot(
 def build_scenario_compare_table(current_snapshot: Dict[str, object], saved_snapshots: List[Dict[str, object]]) -> pd.DataFrame:
     metric_rows = [
         ("Selected suppliers", "selected_supplier_count", "number"),
-        ("Mitigation suppliers", "mitigation_supplier_count", "number"),
+        ("Mitigation suppliers added", "mitigation_supplier_count", "number"),
         ("Covered spend %", "covered_spend_share", "percent"),
-        ("Uncovered components", "uncovered_components", "number"),
+        ("Single-sources left", "single_source_components", "number"),
+        ("Uncovered components left", "uncovered_components", "number"),
         ("Mitigated single-source", "mitigated_single_source_components", "number"),
         ("Mitigated uncovered", "mitigated_uncovered_components", "number"),
         ("Gross savings", "estimated_savings", "currency"),
