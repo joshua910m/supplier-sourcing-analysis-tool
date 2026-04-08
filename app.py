@@ -4596,6 +4596,9 @@ def render_app():
                 + format_name_list(top_supplier_candidates, max_items=3)
                 + ", so changes involving them tend to move savings and coverage the most."
             )
+        analysis_guidance_parts.append(
+            "The scenario score is a comparative decision value rather than a raw financial metric. Higher scores indicate a better balance of spend coverage, fewer uncovered or single-source positions, lower high-risk exposure, and acceptable net savings after mitigation cost. Use it to compare scenario drafts against each other, not as a standalone KPI."
+        )
         if not analysis_guidance_parts:
             analysis_guidance_parts.append(
                 "Use the scenario workflow to test whether supplier count can be reduced without creating uncovered demand or new high-risk exposure."
