@@ -4961,19 +4961,19 @@ def render_app():
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Existing Single-Source Fixed", f"{len(resolved_single_source_names)}")
-        c2.metric("Existing Single-Source Still Present", f"{len(remaining_single_source_names)}")
-        c3.metric("New Single-Source Introduced", f"{len(new_single_source_names)}")
+        c2.metric("Single-Sources Left", f"{len(remaining_single_source_names)}")
+        c3.metric("New Single-Sources Introduced", f"{len(new_single_source_names)}")
         c4.metric("High-Risk Change", f"{scenario_high_risk_count - base_high_risk_count:+d}")
 
         c5, c6, c7, c8 = st.columns(4)
         c5.metric("Existing Uncovered Fixed", f"{fixed_uncovered_count}")
-        c6.metric("New Uncovered Introduced", f"{new_uncovered_count}")
+        c6.metric("Uncovered Components Left", f"{len(uncovered_component_names)}")
         c7.metric("Covered Spend %", f"{scenario_metrics['covered_spend_share']:.0%}")
         c8.metric("Gross Savings", f"${scenario_metrics['estimated_savings']:,.0f}")
 
         c9, c10, c11, c12 = st.columns(4)
         c9.metric("Selected Suppliers", f"{scenario_metrics['selected_supplier_count']}")
-        c10.metric("Mitigation Suppliers", f"{scenario_metrics['mitigation_supplier_count']}")
+        c10.metric("Mitigation Suppliers Added", f"{scenario_metrics['mitigation_supplier_count']}")
         c11.metric("Mitigated Single-Source", f"{scenario_metrics['mitigated_single_source_components']}")
         c12.metric("Mitigated Uncovered", f"{scenario_metrics['mitigated_uncovered_components']}")
 
