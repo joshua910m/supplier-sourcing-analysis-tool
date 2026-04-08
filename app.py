@@ -4134,6 +4134,7 @@ def build_scenario_compare_snapshot(
 
 def build_scenario_compare_table(current_snapshot: Dict[str, object], saved_snapshots: List[Dict[str, object]]) -> pd.DataFrame:
     metric_rows = [
+        ("Optimization objective", "optimization_objective", "text"),
         ("Selected suppliers", "selected_supplier_count", "number"),
         ("Mitigation suppliers added", "mitigation_supplier_count", "number"),
         ("Covered spend %", "covered_spend_share", "percent"),
@@ -4144,8 +4145,8 @@ def build_scenario_compare_table(current_snapshot: Dict[str, object], saved_snap
         ("Gross savings", "estimated_savings", "currency"),
         ("Mitigation cost", "mitigation_cost", "currency"),
         ("Net savings", "net_savings", "currency"),
-        ("Risk reduction", "aggregate_risk_reduction", "decimal"),
-        ("Scenario score", "score", "decimal"),
+        ("Risk reduction (supporting metric)", "aggregate_risk_reduction", "decimal"),
+        ("Scenario score (comparison value)", "score", "decimal"),
     ]
     scenario_columns = [current_snapshot] + list(saved_snapshots)
     rows: List[Dict[str, object]] = []
@@ -4153,7 +4154,9 @@ def build_scenario_compare_table(current_snapshot: Dict[str, object], saved_snap
         row: Dict[str, object] = {"Metric": display_name}
         for snapshot in scenario_columns:
             raw_value = snapshot.get(key, 0)
-            if value_type == "percent":
+            if value_type == "text":
+                formatted = str(raw_value)
+            elif value_type == "percent":
                 formatted = f"{float(raw_value):.0%}"
             elif value_type == "currency":
                 formatted = f"${float(raw_value):,.0f}"
@@ -5054,10 +5057,11 @@ def render_app():
             for idx, snapshot in enumerate(scenario_cards):
                 with comparison_columns[idx]:
                     st.markdown(f"### {snapshot['label']}")
+                    st.caption(f"Objective: {snapshot.get('optimization_objective', 'Best Overall')}")
                     st.metric("Scenario score", f"{float(snapshot['score']):,.1f}")
                     st.metric("Covered spend %", f"{float(snapshot['covered_spend_share']):.0%}")
                     st.metric("Net savings", f"${float(snapshot['net_savings']):,.0f}")
-                    st.metric("Risk reduction", f"{float(snapshot['aggregate_risk_reduction']):.1f}")
+                    st.metric("Risk reduction (supporting)", f"{float(snapshot['aggregate_risk_reduction']):.1f}")
                     st.caption(
                         "Suppliers: "
                         + (", ".join(snapshot.get("selected_suppliers", [])) if snapshot.get("selected_suppliers") else "none")
