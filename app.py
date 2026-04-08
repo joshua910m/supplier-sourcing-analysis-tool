@@ -4568,38 +4568,52 @@ def render_app():
             scenario_component_summary["high_risk_flag"], "component"
         ].astype(str).tolist()
         top_supplier_candidates = scenario_supplier_summary.sort_values("spend", ascending=False)["supplier"].astype(str).tolist()[:3]
-        with st.container(border=True):
-            st.markdown("**Suggested Workflow**")
-            st.write(
-                "1. Generate the recommended scenario as a starting point.\n"
-                "2. Review which suppliers are being retained and which components still need explicit mitigation.\n"
-                "3. Evaluate the draft after each material change so the metrics below reflect the current supplier and mitigation structure.\n"
-                "4. Apply the scenario to the dashboard only after the coverage, savings, and risk tradeoffs look acceptable."
+        analysis_guidance_parts = []
+        if scenario_single_source_names:
+            analysis_guidance_parts.append(
+                "The first components to protect are the single-source items "
+                + format_name_list(scenario_single_source_names, max_items=6)
+                + "."
             )
-            analysis_guidance_parts = []
-            if scenario_single_source_names:
-                analysis_guidance_parts.append(
-                    "The first components to protect are the single-source items "
-                    + format_name_list(scenario_single_source_names, max_items=6)
-                    + "."
-                )
-            if scenario_high_risk_names:
-                analysis_guidance_parts.append(
-                    "The highest-risk components to watch during scenario testing are "
-                    + format_name_list(scenario_high_risk_names, max_items=6)
-                    + "."
-                )
-            if top_supplier_candidates:
-                analysis_guidance_parts.append(
-                    "The suppliers with the largest spend positions in the base case are "
-                    + format_name_list(top_supplier_candidates, max_items=3)
-                    + ", so changes involving them tend to move savings and coverage the most."
-                )
-            if not analysis_guidance_parts:
-                analysis_guidance_parts.append(
-                    "Use the scenario workflow to test whether supplier count can be reduced without creating uncovered demand or new high-risk exposure."
-                )
-            st.caption("Guidance from the current analysis: " + " ".join(analysis_guidance_parts))
+        if scenario_high_risk_names:
+            analysis_guidance_parts.append(
+                "The highest-risk components to watch during scenario testing are "
+                + format_name_list(scenario_high_risk_names, max_items=6)
+                + "."
+            )
+        if top_supplier_candidates:
+            analysis_guidance_parts.append(
+                "The suppliers with the largest spend positions in the base case are "
+                + format_name_list(top_supplier_candidates, max_items=3)
+                + ", so changes involving them tend to move savings and coverage the most."
+            )
+        if not analysis_guidance_parts:
+            analysis_guidance_parts.append(
+                "Use the scenario workflow to test whether supplier count can be reduced without creating uncovered demand or new high-risk exposure."
+            )
+        workflow_html = """
+        <div style="
+            background: linear-gradient(135deg, rgba(13, 148, 136, 0.16), rgba(8, 145, 178, 0.10));
+            border: 1px solid rgba(13, 148, 136, 0.45);
+            border-left: 6px solid #0f766e;
+            border-radius: 14px;
+            padding: 1rem 1.1rem;
+            margin: 0.35rem 0 1rem 0;
+            color: inherit;
+        ">
+            <div style="font-weight: 700; font-size: 1.02rem; margin-bottom: 0.55rem;">Suggested Workflow</div>
+            <div style="line-height: 1.55; font-size: 0.96rem;">
+                1. Generate the recommended scenario as a starting point.<br>
+                2. Review which suppliers are being retained and which components still need explicit mitigation.<br>
+                3. Evaluate the draft after each material change so the metrics below reflect the current supplier and mitigation structure.<br>
+                4. Apply the scenario to the dashboard only after the coverage, savings, and risk tradeoffs look acceptable.
+            </div>
+            <div style="margin-top: 0.75rem; font-size: 0.93rem; line-height: 1.55;">
+                <strong>Guidance from the current analysis:</strong> {guidance_text}
+            </div>
+        </div>
+        """.format(guidance_text=" ".join(analysis_guidance_parts))
+        st.markdown(workflow_html, unsafe_allow_html=True)
         optimization_objective = st.selectbox(
             "Optimization objective",
             options=["Best Overall", "Best Net Savings", "Best Risk Reduction"],
